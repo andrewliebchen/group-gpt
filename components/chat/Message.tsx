@@ -36,8 +36,9 @@ export default function Message({ user_name, content, role, user_id }: MessagePr
             ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
             ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
             li: ({ children }) => <li className="ml-2">{children}</li>,
-            code: ({ inline, children, ...props }) => {
-              if (inline) {
+            code: ({ className, children, ...props }: any) => {
+              const isInline = !className?.includes('language-');
+              if (isInline) {
                 return (
                   <code className="bg-[#2d2d2d] px-1.5 py-0.5 rounded text-sm text-[#ec4899]" {...props}>
                     {children}

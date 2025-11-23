@@ -41,10 +41,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Format messages for OpenAI
-    const conversationHistory = messages?.map((msg) => ({
-      role: msg.role === 'assistant' ? 'assistant' : 'user',
-      content: msg.content,
-    })) || [];
+    const conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = 
+      messages?.map((msg) => ({
+        role: (msg.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+        content: msg.content as string,
+      })) || [];
 
     // Create a readable stream
     const stream = new ReadableStream({
