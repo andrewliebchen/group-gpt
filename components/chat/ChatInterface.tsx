@@ -395,7 +395,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       </div>
 
       {/* Input area - fixed at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 pt-0 bg-[#1f1f1f]">
+      <div className="absolute bottom-0 left-0 right-0 p-3 pt-0 md:p-4 bg-[#1f1f1f]">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="relative flex items-end">
             <textarea
@@ -421,7 +421,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               disabled={isLoading}
               rows={1}
               className="w-full px-3 md:px-4 py-2.5 md:py-3 pr-16 md:pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px] text-base"
-              style={{ minHeight: '48px' }}
+              style={{ minHeight: '64px' }}
             />
             <button
               type="submit"
