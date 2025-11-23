@@ -37,6 +37,11 @@ CREATE POLICY "Allow all users to create threads"
   ON threads FOR INSERT
   WITH CHECK (true);
 
+CREATE POLICY "Allow all users to update threads"
+  ON threads FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
+
 -- RLS Policies for messages
 CREATE POLICY "Allow all users to read messages"
   ON messages FOR SELECT

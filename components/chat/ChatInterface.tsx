@@ -115,14 +115,23 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       return;
     }
 
-    // Update thread title if this is the first message
+    // Add user message to state immediately
+    if (userMessageData) {
+      setMessages((prev) => {
+        const exists = prev.some((msg) => msg.id === userMessageData.id);
+        if (exists) return prev;
+        return [...prev, userMessageData as MessageData];
+      });
+    }
+
+    // Update thread title if this is the first message and title is still "New Chat"
     const { data: threadData } = await supabase
       .from('threads')
       .select('title')
       .eq('id', threadId)
       .single();
 
-    if (threadData && !threadData.title) {
+    if (threadData && (!threadData.title || threadData.title === 'New Chat')) {
       const title = userMessage.length > 50
         ? userMessage.substring(0, 50) + '...'
         : userMessage;
@@ -185,13 +194,26 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
 
       // Save assistant message
       if (assistantContent) {
-        await supabase.from('messages').insert({
-          thread_id: threadId,
-          user_id: 'assistant',
-          user_name: 'GPT-5.1',
-          content: assistantContent,
-          role: 'assistant',
-        });
+        const { data: assistantMessage, error: assistantError } = await supabase
+          .from('messages')
+          .insert({
+            thread_id: threadId,
+            user_id: 'assistant',
+            user_name: 'GPT-5.1',
+            content: assistantContent,
+            role: 'assistant',
+          })
+          .select()
+          .single();
+
+        if (!assistantError && assistantMessage) {
+          // Add the message directly to state to avoid it disappearing
+          setMessages((prev) => {
+            const exists = prev.some((msg) => msg.id === assistantMessage.id);
+            if (exists) return prev;
+            return [...prev, assistantMessage as MessageData];
+          });
+        }
       }
 
       setStreamingContent('');
@@ -203,9 +225,9 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex flex-col h-screen relative">
+      {/* Messages area - scrollable */}
+      <div className="flex-1 overflow-y-auto p-6 pb-32">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <Message
@@ -213,6 +235,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               user_name={message.user_name}
               content={message.content}
               role={message.role}
+              user_id={message.user_id}
             />
           ))}
           {streamingContent && (
@@ -220,14 +243,15 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               user_name="GPT-5.1"
               content={streamingContent}
               role="assistant"
+              user_id="assistant"
             />
           )}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-[#3d3d3d] p-4">
+      {/* Input area - fixed at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-[#1f1f1f]">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="relative">
             <input

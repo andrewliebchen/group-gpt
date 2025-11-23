@@ -11,7 +11,18 @@ export async function POST(req: NextRequest) {
     const { threadId, message, userId, userName } = await req.json();
 
     if (!message || !threadId) {
-      return new Response('Missing required fields', { status: 400 });
+      return new Response(JSON.stringify({ error: 'Missing required fields' }), { 
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('OPENAI_API_KEY is not set');
+      return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // Get conversation history
@@ -23,7 +34,10 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Error fetching messages:', error);
-      return new Response('Error fetching messages', { status: 500 });
+      return new Response(JSON.stringify({ error: 'Error fetching messages', details: error.message }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // Format messages for OpenAI
@@ -55,9 +69,12 @@ export async function POST(req: NextRequest) {
 
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
           controller.close();
-        } catch (error) {
+        } catch (error: any) {
           console.error('OpenAI API error:', error);
-          controller.error(error);
+          const errorMessage = error?.message || 'Unknown error';
+          const errorData = JSON.stringify({ error: 'OpenAI API error', details: errorMessage });
+          controller.enqueue(new TextEncoder().encode(`data: ${errorData}\n\n`));
+          controller.close();
         }
       },
     });
@@ -69,9 +86,15 @@ export async function POST(req: NextRequest) {
         Connection: 'keep-alive',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Chat API error:', error);
-    return new Response('Internal server error', { status: 500 });
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error', 
+      details: error?.message || 'Unknown error' 
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 

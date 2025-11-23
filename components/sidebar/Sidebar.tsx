@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { getUserColor } from '@/lib/utils/colors';
 
 interface Thread {
   id: string;
@@ -17,6 +18,8 @@ export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>('');
 
   useEffect(() => {
     loadThreads();
@@ -30,8 +33,31 @@ export default function Sidebar() {
           schema: 'public',
           table: 'threads',
         },
-        () => {
-          loadThreads();
+        (payload) => {
+          // Handle different event types
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            // Update specific thread
+            setThreads((prev) =>
+              prev.map((t) =>
+                t.id === payload.new.id ? { ...t, ...payload.new } : t
+              )
+            );
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            // Add new thread to the beginning
+            setThreads((prev) => {
+              const exists = prev.some((t) => t.id === payload.new.id);
+              if (exists) return prev;
+              return [payload.new as Thread, ...prev];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            // Remove deleted thread
+            setThreads((prev) =>
+              prev.filter((t) => t.id !== payload.old.id)
+            );
+          } else {
+            // Fallback: reload all threads
+            loadThreads();
+          }
         }
       )
       .subscribe();
@@ -49,6 +75,8 @@ export default function Sidebar() {
 
     if (!error && data) {
       setThreads(data);
+    } else if (error) {
+      console.error('Error loading threads:', error);
     }
   };
 
@@ -67,6 +95,44 @@ export default function Sidebar() {
     if (!error && data) {
       setThreads([data, ...threads]);
       router.push(`/threads/${data.id}`);
+    }
+  };
+
+  const handleSaveThreadTitle = async (threadId: string) => {
+    if (!editingTitle.trim()) {
+      setEditingThreadId(null);
+      setEditingTitle('');
+      return;
+    }
+
+    const newTitle = editingTitle.trim();
+    
+    // Close editing first
+    setEditingThreadId(null);
+    setEditingTitle('');
+
+    // Optimistically update the UI
+    setThreads((prev) =>
+      prev.map((t) => (t.id === threadId ? { ...t, title: newTitle } : t))
+    );
+
+    // Save to database
+    const { data, error } = await supabase
+      .from('threads')
+      .update({ title: newTitle })
+      .eq('id', threadId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving thread title:', error);
+      // Reload threads on error to get correct state
+      loadThreads();
+    } else if (data) {
+      // Update with the actual data from the database to ensure consistency
+      setThreads((prev) =>
+        prev.map((t) => (t.id === threadId ? { ...t, title: data.title } : t))
+      );
     }
   };
 
@@ -102,19 +168,64 @@ export default function Sidebar() {
             Threads
           </h2>
           <div className="space-y-1">
-            {threads.map((thread) => (
-              <Link
-                key={thread.id}
-                href={`/threads/${thread.id}`}
-                className={`block px-3 py-2 rounded text-sm transition-colors ${
-                  pathname === `/threads/${thread.id}`
-                    ? 'bg-[#1f1f1f] text-white'
-                    : 'text-gray-300 hover:bg-[#1f1f1f]'
-                }`}
-              >
-                {thread.title || 'New Chat'}
-              </Link>
-            ))}
+            {threads.map((thread) => {
+              const isEditing = editingThreadId === thread.id;
+              const isActive = pathname === `/threads/${thread.id}`;
+              
+              return (
+                isEditing ? (
+                  <div
+                    key={thread.id}
+                    className={`px-3 py-2 rounded text-sm ${
+                      isActive
+                        ? 'bg-[#1f1f1f] text-white'
+                        : 'text-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          await handleSaveThreadTitle(thread.id);
+                        } else if (e.key === 'Escape') {
+                          setEditingThreadId(null);
+                          setEditingTitle('');
+                        }
+                      }}
+                      onBlur={async () => {
+                        await handleSaveThreadTitle(thread.id);
+                      }}
+                      className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
+                      autoFocus
+                    />
+                  </div>
+                ) : (
+                  <Link
+                    key={thread.id}
+                    href={`/threads/${thread.id}`}
+                    className={`block px-3 py-2 rounded text-sm transition-colors ${
+                      isActive
+                        ? 'bg-[#1f1f1f] text-white'
+                        : 'text-gray-300 hover:bg-[#1f1f1f]'
+                    }`}
+                  >
+                    <span
+                      className="cursor-text"
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setEditingThreadId(thread.id);
+                        setEditingTitle(thread.title || 'New Chat');
+                      }}
+                    >
+                      {thread.title || 'New Chat'}
+                    </span>
+                  </Link>
+                )
+              );
+            })}
           </div>
         </div>
       </div>
@@ -123,7 +234,10 @@ export default function Sidebar() {
       {user && (
         <div className="p-4 border-t border-[#3d3d3d]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+            <div 
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium"
+              style={{ backgroundColor: getUserColor(user.id) }}
+            >
               {user.firstName?.[0] || user.emailAddresses[0]?.emailAddress[0].toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
