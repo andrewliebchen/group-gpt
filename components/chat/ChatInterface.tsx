@@ -27,10 +27,10 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   const [streamingContent, setStreamingContent] = useState('');
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const typingChannelRef = useRef<any>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
-    if (threadId) {
+    if (threadId && user) {
       loadMessages();
       const unsubscribe = subscribeToMessages();
       setupTypingIndicator();
@@ -40,6 +40,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
         cleanupTypingIndicator();
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, user?.id]);
 
   const markThreadAsRead = async () => {
@@ -125,12 +126,14 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       const state = channel.presenceState();
       const typing = new Set<string>();
       
-      Object.values(state).forEach((presences: any) => {
-        presences.forEach((presence: any) => {
-          if (presence.typing && presence.userId !== user.id) {
-            typing.add(presence.userName || presence.userId);
-          }
-        });
+      Object.values(state).forEach((presences: unknown) => {
+        if (Array.isArray(presences)) {
+          presences.forEach((presence: { typing?: boolean; userId?: string; userName?: string }) => {
+            if (presence.typing && presence.userId !== user.id) {
+              typing.add(presence.userName || presence.userId || '');
+            }
+          });
+        }
       });
       
       setTypingUsers(typing);
@@ -193,7 +196,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     }, 3000);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || !user || isLoading) return;
 
@@ -309,7 +312,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
                   assistantContent += parsed.content;
                   setStreamingContent(assistantContent);
                 }
-              } catch (e) {
+              } catch {
                 // Ignore parse errors
               }
             }
@@ -352,7 +355,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   return (
     <div className="flex flex-col h-screen relative">
       {/* Messages area - scrollable */}
-      <div className="flex-1 overflow-y-auto p-6 pb-32">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 md:pb-32">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <Message
@@ -390,7 +393,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       </div>
 
       {/* Input area - fixed at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pt-0 bg-[#1f1f1f]">
+      <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 pt-0 bg-[#1f1f1f]">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="relative flex items-end">
             <textarea
@@ -406,19 +409,22 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleSubmit(e as any);
+                  const form = e.currentTarget.form;
+                  if (form) {
+                    form.requestSubmit();
+                  }
                 }
               }}
               placeholder="Ask anything"
               disabled={isLoading}
               rows={1}
-              className="w-full px-4 py-3 pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px] text-base"
-              style={{ minHeight: '52px' }}
+              className="w-full px-3 md:px-4 py-2.5 md:py-3 pr-16 md:pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px] text-base"
+              style={{ minHeight: '48px' }}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 bottom-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-base font-medium transition-colors"
+              className="absolute right-2 bottom-2 px-3 md:px-4 py-1.5 md:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm md:text-base font-medium transition-colors"
             >
               {isLoading ? 'Sending...' : 'Send'}
             </button>

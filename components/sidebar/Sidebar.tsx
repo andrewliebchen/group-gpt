@@ -14,13 +14,25 @@ interface Thread {
   unread_count?: number;
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const { user } = useUser();
   const router = useRouter();
   const pathname = usePathname();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>('');
+
+  // Close sidebar on mobile when thread is selected
+  const handleThreadClick = () => {
+    if (window.innerWidth < 768 && onClose) {
+      onClose();
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -200,12 +212,44 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="w-64 h-screen bg-[#2d2d2d] border-r border-[#3d3d3d] flex flex-col">
+    <>
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+      <div
+        className={`fixed md:static inset-y-0 left-0 w-64 h-screen bg-[#2d2d2d] border-r border-[#3d3d3d] flex flex-col z-50 transform transition-transform duration-300 ease-in-out ${
+          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
       {/* Top section */}
-      <div className="p-4 border-b border-[#3d3d3d]">
+      <div className="p-3 md:p-4 border-b border-[#3d3d3d] flex items-center gap-2">
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="md:hidden p-2 hover:bg-[#3d3d3d] rounded transition-colors"
+          aria-label="Close sidebar"
+        >
+          <svg
+            className="w-5 h-5 text-white"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
         <button
           onClick={handleCreateThread}
-          className="w-full px-4 py-2 bg-[#1f1f1f] hover:bg-[#3d3d3d] text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          className="flex-1 px-4 py-2 bg-[#1f1f1f] hover:bg-[#3d3d3d] text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <svg
             className="w-4 h-4"
@@ -226,7 +270,7 @@ export default function Sidebar() {
 
       {/* Threads section */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4">
+        <div className="p-3 md:p-4">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
             Threads
           </h2>
@@ -268,6 +312,7 @@ export default function Sidebar() {
                   <Link
                     key={thread.id}
                     href={`/threads/${thread.id}`}
+                    onClick={handleThreadClick}
                     className={`block px-3 py-2.5 rounded text-base transition-colors relative ${
                       isActive
                         ? 'bg-[#1f1f1f] text-white'
@@ -302,7 +347,7 @@ export default function Sidebar() {
 
       {/* User section */}
       {user && (
-        <div className="p-4 border-t border-[#3d3d3d]">
+        <div className="p-3 md:p-4 border-t border-[#3d3d3d]">
           <div className="flex items-center gap-3">
             <div 
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium"
@@ -320,6 +365,7 @@ export default function Sidebar() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

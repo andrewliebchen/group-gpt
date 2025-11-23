@@ -1,6 +1,6 @@
 import { currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import Sidebar from '@/components/sidebar/Sidebar';
+import MobileLayout from '@/components/layout/MobileLayout';
 import ChatInterface from '@/components/chat/ChatInterface';
 
 export default async function ThreadPage({
@@ -16,12 +16,9 @@ export default async function ThreadPage({
   const { id } = await params;
 
   return (
-    <div className="flex h-screen bg-[#1f1f1f]">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <ChatInterface threadId={id} />
-      </div>
-    </div>
+    <MobileLayout>
+      <ChatInterface threadId={id} />
+    </MobileLayout>
   );
 }
 

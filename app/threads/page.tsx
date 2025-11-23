@@ -1,6 +1,6 @@
 import { currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import Sidebar from '@/components/sidebar/Sidebar';
+import MobileLayout from '@/components/layout/MobileLayout';
 
 export default async function ThreadsPage() {
   const user = await currentUser();
@@ -9,9 +9,8 @@ export default async function ThreadsPage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#1f1f1f]">
-      <Sidebar />
-      <div className="flex-1 flex items-center justify-center">
+    <MobileLayout>
+      <div className="flex-1 flex items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-2xl font-semibold text-white mb-2">
             Welcome to Group GPT
@@ -21,7 +20,7 @@ export default async function ThreadsPage() {
           </p>
         </div>
       </div>
-    </div>
+    </MobileLayout>
   );
 }
 
