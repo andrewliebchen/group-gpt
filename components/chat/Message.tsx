@@ -3,7 +3,17 @@
 import { getUserColor } from '@/lib/utils/colors';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import Link from 'next/link';
+
+interface MessageData {
+  id: string;
+  user_id: string;
+  user_name: string;
+  content: string;
+  role: 'user' | 'assistant';
+  created_at: string;
+}
 
 interface MessageProps {
   user_name: string;
@@ -11,11 +21,111 @@ interface MessageProps {
   role: 'user' | 'assistant';
   user_id: string;
   current_user_id?: string;
+  showThoughts?: boolean;
+  onToggleThoughts?: () => void;
+  allMessages?: MessageData[];
 }
 
-export default function Message({ user_name, content, role, user_id, current_user_id }: MessageProps) {
+export default function Message({ user_name, content, role, user_id, current_user_id, showThoughts = false, onToggleThoughts, allMessages = [] }: MessageProps) {
   const userColor = role === 'assistant' ? '#10b981' : getUserColor(user_id);
   const isCurrentUser = current_user_id && user_id === current_user_id && role === 'user';
+  
+  // Build a map of user names to their colors
+  const userColorMap = new Map<string, string>();
+  allMessages.forEach((msg) => {
+    if (msg.role === 'user' && msg.user_id !== 'assistant') {
+      const color = getUserColor(msg.user_id);
+      userColorMap.set(msg.user_name.toLowerCase(), color);
+    }
+  });
+  
+  // Parse [THOUGHT:...] from content
+  const thoughtMatch = content.match(/^\[THOUGHT:\s*([\s\S]+?)\]\s*([\s\S]*)$/);
+  const thought = thoughtMatch ? thoughtMatch[1].trim() : null;
+  let actualContent = thoughtMatch ? thoughtMatch[2].trim() : content;
+  const hasThought = thought !== null;
+  
+  // Create a rehype plugin to process @mentions after markdown parsing
+  const mentionPlugin = () => {
+    return (tree: any) => {
+      const visit = (node: any, parent: any = null) => {
+        // Skip code blocks and inline code
+        if (node.type === 'element' && (node.tagName === 'code' || node.tagName === 'pre')) {
+          return;
+        }
+        
+        if (node.type === 'text' && typeof node.value === 'string') {
+          const parts: any[] = [];
+          let lastIndex = 0;
+          const mentionRegex = /@(\w+)/g;
+          let match;
+          
+          while ((match = mentionRegex.exec(node.value)) !== null) {
+            // Add text before the mention
+            if (match.index > lastIndex) {
+              parts.push({
+                type: 'text',
+                value: node.value.slice(lastIndex, match.index),
+              });
+            }
+            
+            // Get user color
+            const username = match[1];
+            const mentionColor = userColorMap.get(username.toLowerCase()) || '#3b82f6';
+            const hex = mentionColor.replace('#', '');
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            const bgColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+            
+            // Add the mention as a span element
+            parts.push({
+              type: 'element',
+              tagName: 'span',
+              properties: {
+                className: ['mention'],
+                style: `background-color: ${bgColor}; color: ${mentionColor};`,
+                'data-hover-bg': `rgba(${r}, ${g}, ${b}, 0.3)`,
+              },
+              children: [
+                {
+                  type: 'text',
+                  value: `@${username}`,
+                },
+              ],
+            });
+            
+            lastIndex = mentionRegex.lastIndex;
+          }
+          
+          // Add remaining text
+          if (lastIndex < node.value.length) {
+            parts.push({
+              type: 'text',
+              value: node.value.slice(lastIndex),
+            });
+          }
+          
+          // Replace the text node with the parts
+          if (parts.length > 1) {
+            const index = parent.children.indexOf(node);
+            parent.children.splice(index, 1, ...parts);
+            return;
+          }
+        }
+        
+        // Recursively visit children
+        if (node.children) {
+          for (let i = 0; i < node.children.length; i++) {
+            visit(node.children[i], node);
+          }
+        }
+      };
+      
+      visit(tree);
+      return tree;
+    };
+  };
   
   return (
       <div className="mb-6">
@@ -37,10 +147,26 @@ export default function Message({ user_name, content, role, user_id, current_use
             {user_name}
           </span>
         )}
+        {role === 'assistant' && hasThought && onToggleThoughts && (
+          <button
+            onClick={onToggleThoughts}
+            className="ml-2 text-xs text-gray-500 hover:text-gray-400 transition-colors flex items-center gap-1"
+            title={showThoughts ? 'Hide thoughts' : 'Show thoughts'}
+          >
+            <span className="text-[10px]">💭</span>
+            <span className="text-[10px]">{showThoughts ? '−' : '+'}</span>
+          </button>
+        )}
       </div>
-      <div className="text-white prose prose-invert prose-base max-w-none">
+      {hasThought && showThoughts && (
+        <div className="mb-2 text-sm text-gray-500 italic">
+          {thought}
+        </div>
+      )}
+      <div className="text-white prose prose-invert prose-base max-w-none [&_.mention]:inline-block [&_.mention]:px-1 [&_.mention]:py-0 [&_.mention]:mx-0.5 [&_.mention]:rounded [&_.mention]:font-medium [&_.mention]:transition-colors [&_.mention]:cursor-pointer">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw, mentionPlugin]}
           components={{
             p: ({ children }) => <p className="mb-3 last:mb-0 text-base leading-relaxed">{children}</p>,
             h1: ({ children }) => <h1 className="text-2xl font-bold mb-3 mt-6 first:mt-0">{children}</h1>,
@@ -111,7 +237,7 @@ export default function Message({ user_name, content, role, user_id, current_use
             ),
           }}
         >
-          {content}
+          {actualContent}
         </ReactMarkdown>
       </div>
     </div>

@@ -29,3 +29,9 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Style for @mentions with user-specific colors */
+.mention:hover {
+  opacity: 0.9;
+  filter: brightness(1.1);
+}

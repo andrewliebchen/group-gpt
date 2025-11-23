@@ -24,8 +24,6 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState<string>('');
 
   // Close sidebar on mobile when thread is selected
   const handleThreadClick = () => {
@@ -173,43 +171,6 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     }
   };
 
-  const handleSaveThreadTitle = async (threadId: string) => {
-    if (!editingTitle.trim()) {
-      setEditingThreadId(null);
-      setEditingTitle('');
-      return;
-    }
-
-    const newTitle = editingTitle.trim();
-    
-    // Close editing first
-    setEditingThreadId(null);
-    setEditingTitle('');
-
-    // Optimistically update the UI
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, title: newTitle } : t))
-    );
-
-    // Save to database
-    const { data, error } = await supabase
-      .from('threads')
-      .update({ title: newTitle })
-      .eq('id', threadId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error saving thread title:', error);
-      // Reload threads on error to get correct state
-      loadThreads();
-    } else if (data) {
-      // Update with the actual data from the database to ensure consistency
-      setThreads((prev) =>
-        prev.map((t) => (t.id === threadId ? { ...t, title: data.title } : t))
-      );
-    }
-  };
 
   return (
     <>
@@ -226,30 +187,32 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         }`}
       >
       {/* Top section */}
-      <div className="p-3 md:p-4 border-b border-[#3d3d3d] flex items-center gap-2">
+      <div className="px-3 md:px-4 pt-3 md:pt-4 pb-0">
         {/* Mobile close button */}
-        <button
-          onClick={onClose}
-          className="md:hidden p-2 hover:bg-[#3d3d3d] rounded transition-colors"
-          aria-label="Close sidebar"
-        >
-          <svg
-            className="w-5 h-5 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={onClose}
+            className="md:hidden p-2 hover:bg-[#1f1f1f] rounded transition-colors"
+            aria-label="Close sidebar"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-5 h-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
         <button
           onClick={handleCreateThread}
-          className="flex-1 px-4 py-2 bg-[#1f1f1f] hover:bg-[#3d3d3d] text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          className="w-full px-3 py-2.5 text-gray-300 hover:bg-[#1f1f1f] hover:text-white rounded text-base transition-colors flex items-center gap-2 cursor-pointer"
         >
           <svg
             className="w-4 h-4"
@@ -257,11 +220,21 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
+            <rect
+              x="3"
+              y="3"
+              width="18"
+              height="18"
+              rx="2"
+              stroke="currentColor"
+              strokeWidth="2"
+              fill="none"
+            />
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M12 4v16m8-8H4"
+              d="M12 8v8m-4-4h8"
             />
           </svg>
           New chat
@@ -270,75 +243,36 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
       {/* Threads section */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-3 md:p-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-            Threads
+        <div className="px-3 md:px-4 pt-4 pb-3 md:pb-4">
+          <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 px-3">
+            Chats
           </h2>
           <div className="space-y-1">
             {threads.map((thread) => {
-              const isEditing = editingThreadId === thread.id;
               const isActive = pathname === `/threads/${thread.id}`;
               
               return (
-                isEditing ? (
-                  <div
-                    key={thread.id}
-                    className={`px-3 py-2 rounded text-sm ${
-                      isActive
-                        ? 'bg-[#1f1f1f] text-white'
-                        : 'text-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="text"
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onKeyDown={async (e) => {
-                        if (e.key === 'Enter') {
-                          await handleSaveThreadTitle(thread.id);
-                        } else if (e.key === 'Escape') {
-                          setEditingThreadId(null);
-                          setEditingTitle('');
-                        }
-                      }}
-                      onBlur={async () => {
-                        await handleSaveThreadTitle(thread.id);
-                      }}
-                      className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                      autoFocus
-                    />
-                  </div>
-                ) : (
-                  <Link
-                    key={thread.id}
-                    href={`/threads/${thread.id}`}
-                    onClick={handleThreadClick}
-                    className={`block px-3 py-2.5 rounded text-base transition-colors relative ${
-                      isActive
-                        ? 'bg-[#1f1f1f] text-white'
-                        : 'text-gray-300 hover:bg-[#1f1f1f]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="cursor-text flex-1 truncate"
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setEditingThreadId(thread.id);
-                          setEditingTitle(thread.title || 'New Chat');
-                        }}
-                      >
-                        {thread.title || 'New Chat'}
+                <Link
+                  key={thread.id}
+                  href={`/threads/${thread.id}`}
+                  onClick={handleThreadClick}
+                  className={`block px-3 py-2.5 rounded text-base transition-colors relative cursor-pointer ${
+                    isActive
+                      ? 'bg-[#1f1f1f] text-white'
+                      : 'text-gray-300 hover:bg-[#1f1f1f]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex-1 truncate">
+                      {thread.title || 'New Chat'}
+                    </span>
+                    {thread.unread_count && thread.unread_count > 0 ? (
+                      <span className="flex-shrink-0 bg-blue-600 text-white text-sm font-medium px-2.5 py-1 rounded-full min-w-[24px] text-center">
+                        {thread.unread_count > 99 ? '99+' : thread.unread_count}
                       </span>
-                      {thread.unread_count && thread.unread_count > 0 ? (
-                        <span className="flex-shrink-0 bg-blue-600 text-white text-sm font-medium px-2.5 py-1 rounded-full min-w-[24px] text-center">
-                          {thread.unread_count > 99 ? '99+' : thread.unread_count}
-                        </span>
-                      ) : null}
-                    </div>
-                  </Link>
-                )
+                    ) : null}
+                  </div>
+                </Link>
               );
             })}
           </div>

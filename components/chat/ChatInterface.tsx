@@ -24,20 +24,28 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [streamingContent, setStreamingContent] = useState('');
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [noResponseMessageIds, setNoResponseMessageIds] = useState<Set<string>>(new Set());
+  const [threadTitle, setThreadTitle] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState<string>('');
+  const [showThoughts, setShowThoughts] = useState(false);
 
   useEffect(() => {
     if (threadId && user) {
       loadMessages();
+      loadThreadTitle();
       const unsubscribe = subscribeToMessages();
+      const unsubscribeThread = subscribeToThread();
       setupTypingIndicator();
       markThreadAsRead();
       return () => {
         if (unsubscribe) unsubscribe();
+        if (unsubscribeThread) unsubscribeThread();
         cleanupTypingIndicator();
       };
     }
@@ -63,6 +71,16 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     scrollToBottom();
   }, [messages, streamingContent, typingUsers]);
 
+  // Set initial textarea height to 2 lines
+  useEffect(() => {
+    if (textareaRef.current) {
+      const lineHeight = parseFloat(getComputedStyle(textareaRef.current).lineHeight) || 24;
+      const padding = parseFloat(getComputedStyle(textareaRef.current).paddingTop) + parseFloat(getComputedStyle(textareaRef.current).paddingBottom);
+      const twoLineHeight = (lineHeight * 2) + padding;
+      textareaRef.current.style.height = `${twoLineHeight}px`;
+    }
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -76,6 +94,18 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
 
     if (!error && data) {
       setMessages(data);
+    }
+  };
+
+  const loadThreadTitle = async () => {
+    const { data, error } = await supabase
+      .from('threads')
+      .select('title')
+      .eq('id', threadId)
+      .single();
+
+    if (!error && data) {
+      setThreadTitle(data.title);
     }
   };
 
@@ -109,6 +139,64 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     return () => {
       supabase.removeChannel(channel);
     };
+  };
+
+  const subscribeToThread = () => {
+    const channel = supabase
+      .channel(`thread-title:${threadId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'threads',
+          filter: `id=eq.${threadId}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.title) {
+            setThreadTitle(payload.new.title);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const handleSaveThreadTitle = async () => {
+    if (!editingTitle.trim()) {
+      setIsEditingTitle(false);
+      setEditingTitle('');
+      return;
+    }
+
+    const newTitle = editingTitle.trim();
+    
+    // Close editing first
+    setIsEditingTitle(false);
+    setEditingTitle('');
+
+    // Optimistically update the UI
+    setThreadTitle(newTitle);
+
+    // Save to database
+    const { data, error } = await supabase
+      .from('threads')
+      .update({ title: newTitle })
+      .eq('id', threadId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving thread title:', error);
+      // Reload title on error to get correct state
+      loadThreadTitle();
+    } else if (data) {
+      // Update with the actual data from the database to ensure consistency
+      setThreadTitle(data.title);
+    }
   };
 
   const setupTypingIndicator = () => {
@@ -268,6 +356,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
         .from('threads')
         .update({ title })
         .eq('id', threadId);
+      setThreadTitle(title);
     }
 
     // Call OpenAI API
@@ -368,6 +457,41 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-screen relative">
+      {/* Thread title */}
+      {threadTitle && (
+        <div className="px-4 md:px-6 h-14 bg-[#2a2a2a] flex items-center">
+          <div className="max-w-4xl mx-auto w-full">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveThreadTitle();
+                  } else if (e.key === 'Escape') {
+                    setIsEditingTitle(false);
+                    setEditingTitle('');
+                  }
+                }}
+                onBlur={handleSaveThreadTitle}
+                className="w-full bg-[#1f1f1f] border border-[#3d3d3d] rounded px-3 py-1.5 text-xl font-semibold text-white focus:outline-none focus:border-blue-500"
+                autoFocus
+              />
+            ) : (
+              <h1
+                className="text-xl font-semibold text-white cursor-text"
+                onDoubleClick={() => {
+                  setIsEditingTitle(true);
+                  setEditingTitle(threadTitle);
+                }}
+              >
+                {threadTitle}
+              </h1>
+            )}
+          </div>
+        </div>
+      )}
       {/* Messages area - scrollable */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 md:pb-32">
         <div className="max-w-4xl mx-auto">
@@ -379,6 +503,9 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
                 role={message.role}
                 user_id={message.user_id}
                 current_user_id={user?.id}
+                showThoughts={showThoughts}
+                onToggleThoughts={message.role === 'assistant' ? () => setShowThoughts(!showThoughts) : undefined}
+                allMessages={messages}
               />
               {message.role === 'user' && noResponseMessageIds.has(message.id) && (
                 <div className="mb-6">
@@ -396,6 +523,9 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               role="assistant"
               user_id="assistant"
               current_user_id={user?.id}
+              showThoughts={showThoughts}
+              onToggleThoughts={() => setShowThoughts(!showThoughts)}
+              allMessages={messages}
             />
           )}
           {typingUsers.size > 0 && (
@@ -421,12 +551,25 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="relative flex items-end">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);
-                // Auto-resize textarea
-                e.target.style.height = 'auto';
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+                // Auto-resize textarea - initial height is 2 lines, then grow beyond that
+                const textarea = e.target;
+                const lineHeight = textareaRef.current 
+                  ? parseFloat(getComputedStyle(textareaRef.current).lineHeight) || 24
+                  : 24;
+                const padding = parseFloat(getComputedStyle(textarea).paddingTop) + parseFloat(getComputedStyle(textarea).paddingBottom);
+                const twoLineHeight = (lineHeight * 2) + padding;
+                
+                textarea.style.height = 'auto';
+                const scrollHeight = textarea.scrollHeight;
+                // Keep at 2-line height minimum, then grow beyond that
+                const newHeight = scrollHeight > twoLineHeight 
+                  ? Math.min(scrollHeight, 200) 
+                  : twoLineHeight;
+                textarea.style.height = `${newHeight}px`;
                 // Send typing indicator
                 handleTyping();
               }}
@@ -443,7 +586,6 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               disabled={isLoading}
               rows={1}
               className="w-full px-3 md:px-4 py-2.5 md:py-3 pr-16 md:pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px] text-base"
-              style={{ minHeight: '64px' }}
             />
             <button
               type="submit"
