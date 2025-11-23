@@ -11,6 +11,7 @@ interface Thread {
   id: string;
   title: string | null;
   created_at: string;
+  unread_count?: number;
 }
 
 export default function Sidebar() {
@@ -22,62 +23,124 @@ export default function Sidebar() {
   const [editingTitle, setEditingTitle] = useState<string>('');
 
   useEffect(() => {
-    loadThreads();
-    
-    const channel = supabase
-      .channel('threads-list')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'threads',
-        },
-        (payload) => {
-          // Handle different event types
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            // Update specific thread
-            setThreads((prev) =>
-              prev.map((t) =>
-                t.id === payload.new.id ? { ...t, ...payload.new } : t
-              )
-            );
-          } else if (payload.eventType === 'INSERT' && payload.new) {
-            // Add new thread to the beginning
-            setThreads((prev) => {
-              const exists = prev.some((t) => t.id === payload.new.id);
-              if (exists) return prev;
-              return [payload.new as Thread, ...prev];
-            });
-          } else if (payload.eventType === 'DELETE') {
-            // Remove deleted thread
-            setThreads((prev) =>
-              prev.filter((t) => t.id !== payload.old.id)
-            );
-          } else {
-            // Fallback: reload all threads
+    if (user) {
+      loadThreads();
+      
+      const threadsChannel = supabase
+        .channel('threads-list')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'threads',
+          },
+          (payload) => {
+            // Handle different event types
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              // Update specific thread
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.new.id ? { ...t, ...payload.new } : t
+                )
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              // Add new thread to the beginning
+              setThreads((prev) => {
+                const exists = prev.some((t) => t.id === payload.new.id);
+                if (exists) return prev;
+                return [payload.new as Thread, ...prev];
+              });
+            } else if (payload.eventType === 'DELETE') {
+              // Remove deleted thread
+              setThreads((prev) =>
+                prev.filter((t) => t.id !== payload.old.id)
+              );
+            } else {
+              // Fallback: reload all threads
+              loadThreads();
+            }
+          }
+        )
+        .subscribe();
+
+      // Listen for new messages to update unread counts
+      const messagesChannel = supabase
+        .channel('sidebar-messages')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          () => {
+            // Refresh unread counts when new messages arrive
             loadThreads();
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+      return () => {
+        supabase.removeChannel(threadsChannel);
+        supabase.removeChannel(messagesChannel);
+      };
+    }
+  }, [user]);
 
   const loadThreads = async () => {
-    const { data, error } = await supabase
+    if (!user) return;
+
+    const { data: threadsData, error: threadsError } = await supabase
       .from('threads')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      setThreads(data);
-    } else if (error) {
-      console.error('Error loading threads:', error);
+    if (threadsError) {
+      console.error('Error loading threads:', threadsError);
+      return;
     }
+
+    if (!threadsData) return;
+
+    // Get unread counts for each thread
+    const threadIds = threadsData.map((t) => t.id);
+    
+    // Get last read times for current user
+    const { data: readData } = await supabase
+      .from('thread_reads')
+      .select('thread_id, last_read_at')
+      .eq('user_id', user.id)
+      .in('thread_id', threadIds);
+
+    const lastReadMap = new Map(
+      readData?.map((r) => [r.thread_id, new Date(r.last_read_at)]) || []
+    );
+
+    // Count unread messages for each thread
+    const threadsWithUnread = await Promise.all(
+      threadsData.map(async (thread) => {
+        const lastRead = lastReadMap.get(thread.id);
+        
+        let query = supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('thread_id', thread.id);
+
+        if (lastRead) {
+          query = query.gt('created_at', lastRead.toISOString());
+        }
+
+        const { count } = await query;
+        
+        return {
+          ...thread,
+          unread_count: count || 0,
+        };
+      })
+    );
+
+    setThreads(threadsWithUnread);
   };
 
   const handleCreateThread = async () => {
@@ -205,23 +268,30 @@ export default function Sidebar() {
                   <Link
                     key={thread.id}
                     href={`/threads/${thread.id}`}
-                    className={`block px-3 py-2 rounded text-sm transition-colors ${
+                    className={`block px-3 py-2 rounded text-sm transition-colors relative ${
                       isActive
                         ? 'bg-[#1f1f1f] text-white'
                         : 'text-gray-300 hover:bg-[#1f1f1f]'
                     }`}
                   >
-                    <span
-                      className="cursor-text"
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setEditingThreadId(thread.id);
-                        setEditingTitle(thread.title || 'New Chat');
-                      }}
-                    >
-                      {thread.title || 'New Chat'}
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="cursor-text flex-1 truncate"
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditingThreadId(thread.id);
+                          setEditingTitle(thread.title || 'New Chat');
+                        }}
+                      >
+                        {thread.title || 'New Chat'}
+                      </span>
+                      {thread.unread_count && thread.unread_count > 0 && (
+                        <span className="flex-shrink-0 bg-blue-600 text-white text-xs font-medium px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                          {thread.unread_count > 99 ? '99+' : thread.unread_count}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 )
               );

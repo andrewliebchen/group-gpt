@@ -25,20 +25,41 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingContent, setStreamingContent] = useState('');
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingChannelRef = useRef<any>(null);
 
   useEffect(() => {
     if (threadId) {
       loadMessages();
       const unsubscribe = subscribeToMessages();
+      setupTypingIndicator();
+      markThreadAsRead();
       return () => {
         if (unsubscribe) unsubscribe();
+        cleanupTypingIndicator();
       };
     }
-  }, [threadId]);
+  }, [threadId, user?.id]);
+
+  const markThreadAsRead = async () => {
+    if (!user || !threadId) return;
+
+    // Upsert the read timestamp
+    await supabase
+      .from('thread_reads')
+      .upsert({
+        user_id: user.id,
+        thread_id: threadId,
+        last_read_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id,thread_id',
+      });
+  };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, typingUsers]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -72,7 +93,12 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
             // Avoid duplicates
             const exists = prev.some((msg) => msg.id === payload.new.id);
             if (exists) return prev;
-            return [...prev, payload.new as MessageData];
+            const newMessages = [...prev, payload.new as MessageData];
+            // Mark thread as read when new message arrives (if user is viewing)
+            if (payload.new.role === 'assistant' || payload.new.user_id !== user?.id) {
+              markThreadAsRead();
+            }
+            return newMessages;
           });
         }
       )
@@ -83,6 +109,90 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     };
   };
 
+  const setupTypingIndicator = () => {
+    if (!user) return;
+
+    const channel = supabase.channel(`typing:${threadId}`, {
+      config: {
+        presence: {
+          key: user.id,
+        },
+      },
+    });
+
+    // Listen for typing events from other users
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const typing = new Set<string>();
+      
+      Object.values(state).forEach((presences: any) => {
+        presences.forEach((presence: any) => {
+          if (presence.typing && presence.userId !== user.id) {
+            typing.add(presence.userName || presence.userId);
+          }
+        });
+      });
+      
+      setTypingUsers(typing);
+    });
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({
+          userId: user.id,
+          userName: user.firstName && user.lastName
+            ? `${user.firstName} ${user.lastName}`
+            : user.emailAddresses[0]?.emailAddress || 'User',
+          typing: false,
+        });
+      }
+    });
+
+    typingChannelRef.current = channel;
+  };
+
+  const cleanupTypingIndicator = () => {
+    if (typingChannelRef.current) {
+      typingChannelRef.current.unsubscribe();
+      supabase.removeChannel(typingChannelRef.current);
+      typingChannelRef.current = null;
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
+  const handleTyping = () => {
+    if (!user || !typingChannelRef.current) return;
+
+    // Send typing event
+    typingChannelRef.current.track({
+      userId: user.id,
+      userName: user.firstName && user.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user.emailAddresses[0]?.emailAddress || 'User',
+      typing: true,
+    });
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Stop typing after 3 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      if (typingChannelRef.current) {
+        typingChannelRef.current.track({
+          userId: user.id,
+          userName: user.firstName && user.lastName
+            ? `${user.firstName} ${user.lastName}`
+            : user.emailAddresses[0]?.emailAddress || 'User',
+          typing: false,
+        });
+      }
+    }, 3000);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user || isLoading) return;
@@ -91,6 +201,21 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     setInput('');
     setIsLoading(true);
     setStreamingContent('');
+
+    // Stop typing indicator
+    if (typingChannelRef.current && user) {
+      typingChannelRef.current.track({
+        userId: user.id,
+        userName: user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user.emailAddresses[0]?.emailAddress || 'User',
+        typing: false,
+      });
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
 
     const userName = user.firstName && user.lastName
       ? `${user.firstName} ${user.lastName}`
@@ -246,6 +371,20 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               user_id="assistant"
             />
           )}
+          {typingUsers.size > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 text-sm text-gray-400 italic">
+                <div className="flex gap-1">
+                  <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                <span>
+                  {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing...
+                </span>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -253,19 +392,33 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       {/* Input area - fixed at bottom */}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-[#1f1f1f]">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-          <div className="relative">
-            <input
-              type="text"
+          <div className="relative flex items-end">
+            <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Auto-resize textarea
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+                // Send typing indicator
+                handleTyping();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e as any);
+                }
+              }}
               placeholder="Ask anything"
               disabled={isLoading}
-              className="w-full px-4 py-3 pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+              rows={1}
+              className="w-full px-4 py-3 pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px]"
+              style={{ minHeight: '48px' }}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors"
+              className="absolute right-2 bottom-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors"
             >
               {isLoading ? 'Sending...' : 'Send'}
             </button>
