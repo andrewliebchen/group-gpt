@@ -3,16 +3,19 @@
 import { getUserColor } from '@/lib/utils/colors';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Link from 'next/link';
 
 interface MessageProps {
   user_name: string;
   content: string;
   role: 'user' | 'assistant';
   user_id: string;
+  current_user_id?: string;
 }
 
-export default function Message({ user_name, content, role, user_id }: MessageProps) {
+export default function Message({ user_name, content, role, user_id, current_user_id }: MessageProps) {
   const userColor = role === 'assistant' ? '#10b981' : getUserColor(user_id);
+  const isCurrentUser = current_user_id && user_id === current_user_id && role === 'user';
   
   return (
       <div className="mb-6">
@@ -21,9 +24,19 @@ export default function Message({ user_name, content, role, user_id }: MessagePr
           className="w-2.5 h-2.5 rounded-full"
           style={{ backgroundColor: userColor }}
         />
-        <span className="text-gray-400 text-base" style={{ color: userColor }}>
-          {user_name}
-        </span>
+        {isCurrentUser ? (
+          <Link
+            href="/profile"
+            className="text-gray-400 text-base hover:opacity-80 transition-opacity cursor-pointer"
+            style={{ color: userColor }}
+          >
+            {user_name}
+          </Link>
+        ) : (
+          <span className="text-gray-400 text-base" style={{ color: userColor }}>
+            {user_name}
+          </span>
+        )}
       </div>
       <div className="text-white prose prose-invert prose-base max-w-none">
         <ReactMarkdown

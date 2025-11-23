@@ -348,7 +348,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       {/* User section */}
       {user && (
         <div className="p-3 md:p-4 border-t border-[#3d3d3d]">
-          <div className="flex items-center gap-3">
+          <Link
+            href="/profile"
+            onClick={handleThreadClick}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <div 
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium"
               style={{ backgroundColor: getUserColor(user.id) }}
@@ -362,7 +366,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                   : user.emailAddresses[0]?.emailAddress}
               </div>
             </div>
-          </div>
+          </Link>
         </div>
       )}
       </div>

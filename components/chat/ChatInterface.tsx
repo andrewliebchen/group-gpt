@@ -364,6 +364,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               content={message.content}
               role={message.role}
               user_id={message.user_id}
+              current_user_id={user?.id}
             />
           ))}
           {streamingContent && (
@@ -372,6 +373,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               content={streamingContent}
               role="assistant"
               user_id="assistant"
+              current_user_id={user?.id}
             />
           )}
           {typingUsers.size > 0 && (

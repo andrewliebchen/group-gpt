@@ -53,6 +53,29 @@ export async function POST(req: NextRequest) {
       // Continue without background context if this fails
     }
 
+    // Get all unique user IDs from current thread messages
+    const userIds = new Set<string>();
+    currentMessages?.forEach((msg) => {
+      if (msg.user_id && msg.user_id !== 'assistant') {
+        userIds.add(msg.user_id);
+      }
+    });
+    // Also include the current user
+    if (userId) {
+      userIds.add(userId);
+    }
+
+    // Fetch background contexts for all users in the conversation
+    const { data: userProfiles, error: profilesError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('user_id, background_context')
+      .in('user_id', Array.from(userIds));
+
+    if (profilesError) {
+      console.error('Error fetching user profiles:', profilesError);
+      // Continue without user background contexts if this fails
+    }
+
     // Format current thread messages (emphasized - this is the active conversation)
     const currentThreadHistory: Array<{ role: 'user' | 'assistant'; content: string }> = 
       currentMessages?.map((msg) => ({
@@ -66,6 +89,19 @@ export async function POST(req: NextRequest) {
         role: (msg.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: msg.content as string,
       })) || [];
+
+    // Format user background contexts
+    const userBackgroundContexts = userProfiles
+      ?.filter((profile) => profile.background_context && profile.background_context.trim())
+      .map((profile) => {
+        // Get user name from messages for better context
+        const userMessage = currentMessages?.find((msg) => msg.user_id === profile.user_id);
+        const userName = userMessage?.user_name || `User ${profile.user_id.substring(0, 8)}`;
+        return {
+          userName,
+          context: profile.background_context as string,
+        };
+      }) || [];
 
     // Create a readable stream
     const stream = new ReadableStream({
@@ -97,6 +133,10 @@ ${currentThreadHistory.length > 0 ? currentThreadHistory.map((msg) =>
 
 ${backgroundContext.length > 0 ? `\nBACKGROUND CONTEXT from other conversations (use sparingly for reference only - don't let it distract from current conversation):\n${backgroundContext.map((msg) => 
   `[Other thread] ${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+).join('\n\n')}` : ''}
+
+${userBackgroundContexts.length > 0 ? `\nUSER BACKGROUND CONTEXTS (information about the people in this conversation):\n${userBackgroundContexts.map((profile) => 
+  `${profile.userName}: ${profile.context}`
 ).join('\n\n')}` : ''}
 
 Remember: The current conversation above is your primary focus. Use background context only when it genuinely helps you be more helpful or informed. Be personable, interested, and help move the conversation forward in engaging ways - but always be precise and concise.`;
