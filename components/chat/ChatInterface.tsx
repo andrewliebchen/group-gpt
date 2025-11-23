@@ -390,7 +390,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       </div>
 
       {/* Input area - fixed at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-[#1f1f1f]">
+      <div className="absolute bottom-0 left-0 right-0 p-4 pt-0 bg-[#1f1f1f]">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="relative flex items-end">
             <textarea
@@ -412,13 +412,13 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               placeholder="Ask anything"
               disabled={isLoading}
               rows={1}
-              className="w-full px-4 py-3 pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px]"
-              style={{ minHeight: '48px' }}
+              className="w-full px-4 py-3 pr-20 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 resize-none overflow-y-auto max-h-[200px] text-base"
+              style={{ minHeight: '52px' }}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 bottom-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors"
+              className="absolute right-2 bottom-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-base font-medium transition-colors"
             >
               {isLoading ? 'Sending...' : 'Send'}
             </button>

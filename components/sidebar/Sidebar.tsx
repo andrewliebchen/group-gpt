@@ -268,7 +268,7 @@ export default function Sidebar() {
                   <Link
                     key={thread.id}
                     href={`/threads/${thread.id}`}
-                    className={`block px-3 py-2 rounded text-sm transition-colors relative ${
+                    className={`block px-3 py-2.5 rounded text-base transition-colors relative ${
                       isActive
                         ? 'bg-[#1f1f1f] text-white'
                         : 'text-gray-300 hover:bg-[#1f1f1f]'
@@ -286,11 +286,11 @@ export default function Sidebar() {
                       >
                         {thread.title || 'New Chat'}
                       </span>
-                      {thread.unread_count && thread.unread_count > 0 && (
-                        <span className="flex-shrink-0 bg-blue-600 text-white text-xs font-medium px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                      {thread.unread_count && thread.unread_count > 0 ? (
+                        <span className="flex-shrink-0 bg-blue-600 text-white text-sm font-medium px-2.5 py-1 rounded-full min-w-[24px] text-center">
                           {thread.unread_count > 99 ? '99+' : thread.unread_count}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </Link>
                 )
