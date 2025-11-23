@@ -5,7 +5,8 @@ export default async function Home() {
   const user = await currentUser();
   
   if (user) {
-    redirect('/spaces');
+    // Redirect to threads page or create a new thread
+    redirect('/threads');
   } else {
     redirect('/sign-in');
   }

@@ -2,7 +2,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Sidebar from '@/components/sidebar/Sidebar';
 
-export default async function SpacesPage() {
+export default async function ThreadsPage() {
   const user = await currentUser();
   if (!user) {
     redirect('/sign-in');
@@ -17,7 +17,7 @@ export default async function SpacesPage() {
             Welcome to Group GPT
           </h1>
           <p className="text-gray-400">
-            Select a space from the sidebar or create a new one to get started.
+            Create a new chat to get started.
           </p>
         </div>
       </div>

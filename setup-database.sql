@@ -1,3 +1,5 @@
+-- Run this SQL in your Supabase SQL Editor to set up the database
+
 -- Create threads table
 CREATE TABLE IF NOT EXISTS threads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -44,7 +46,6 @@ CREATE POLICY "Allow all users to create messages"
   ON messages FOR INSERT
   WITH CHECK (true);
 
--- Note: Real-time is enabled by default in Supabase for tables with RLS
--- If you need to explicitly enable it, use the Supabase dashboard:
--- Go to Database > Replication and enable replication for the messages table
+-- Enable real-time for messages (optional - can also be done via dashboard)
+-- Go to Database > Replication in Supabase dashboard and enable replication for messages table
 
