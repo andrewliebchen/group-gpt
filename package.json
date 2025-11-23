@@ -9,7 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.35.4",
+    "@supabase/supabase-js": "^2.84.0",
     "next": "16.0.3",
+    "openai": "^6.9.1",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
