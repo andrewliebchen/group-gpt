@@ -90,6 +90,19 @@ export async function POST(req: NextRequest) {
         content: msg.content as string,
       })) || [];
 
+    // Collect all unique user names from the current thread
+    const userNames = new Set<string>();
+    currentMessages?.forEach((msg) => {
+      if (msg.user_name && msg.user_id !== 'assistant') {
+        userNames.add(msg.user_name);
+      }
+    });
+    // Also include the current user's name
+    if (userName) {
+      userNames.add(userName);
+    }
+    const groupMemberNames = Array.from(userNames);
+
     // Format user background contexts
     const userBackgroundContexts = userProfiles
       ?.filter((profile) => profile.background_context && profile.background_context.trim())
@@ -126,6 +139,8 @@ Communication style:
 - Avoid filler words and unnecessary elaboration
 - Make every word count
 
+${groupMemberNames.length > 0 ? `GROUP MEMBERS in this conversation:\n${groupMemberNames.map((name) => `- ${name}`).join('\n')}\n\nIMPORTANT: Before responding, analyze whether the message is directed at you (the AI assistant) or at a specific group member. If the message is clearly directed at a specific group member (e.g., "Kepa, what do you think?" or "Sarah, can you help with this?"), you should NOT respond. Instead, output exactly "[NO_RESPONSE]" as the first token and then stop. Only respond if the message is directed at you, the group generally, or if it's unclear who it's directed at.\n\n` : ''}
+
 CURRENT CONVERSATION (this is the active thread - focus here):
 ${currentThreadHistory.length > 0 ? currentThreadHistory.map((msg) => 
   `${msg.role === 'user' ? 'User' : 'You'}: ${msg.content}`
@@ -151,12 +166,35 @@ Remember: The current conversation above is your primary focus. Use background c
             stream: true,
           });
 
+          let accumulatedContent = '';
+          let noResponseDetected = false;
+
           for await (const chunk of completion) {
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
-              const data = JSON.stringify({ content });
-              controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+              accumulatedContent += content;
+              
+              // Check if the accumulated content starts with [NO_RESPONSE]
+              if (accumulatedContent.trim().startsWith('[NO_RESPONSE]')) {
+                noResponseDetected = true;
+                // Send the no_response flag
+                const noResponseData = JSON.stringify({ no_response: true });
+                controller.enqueue(new TextEncoder().encode(`data: ${noResponseData}\n\n`));
+                break;
+              }
+              
+              // Only stream content if we haven't detected NO_RESPONSE
+              if (!noResponseDetected) {
+                const data = JSON.stringify({ content });
+                controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+              }
             }
+          }
+
+          // If we detected NO_RESPONSE but haven't sent the flag yet (edge case)
+          if (!noResponseDetected && accumulatedContent.trim().startsWith('[NO_RESPONSE]')) {
+            const noResponseData = JSON.stringify({ no_response: true });
+            controller.enqueue(new TextEncoder().encode(`data: ${noResponseData}\n\n`));
           }
 
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));

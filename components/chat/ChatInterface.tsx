@@ -28,6 +28,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [noResponseMessageIds, setNoResponseMessageIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (threadId && user) {
@@ -291,6 +292,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
+      let shouldNotRespond = false;
 
       if (reader) {
         while (true) {
@@ -308,6 +310,14 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               }
               try {
                 const parsed = JSON.parse(data);
+                if (parsed.no_response) {
+                  shouldNotRespond = true;
+                  // Mark this user message as having triggered a no-response
+                  if (userMessageData?.id) {
+                    setNoResponseMessageIds((prev) => new Set(prev).add(userMessageData.id));
+                  }
+                  break;
+                }
                 if (parsed.content) {
                   assistantContent += parsed.content;
                   setStreamingContent(assistantContent);
@@ -317,11 +327,15 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
               }
             }
           }
+          
+          if (shouldNotRespond) {
+            break;
+          }
         }
       }
 
-      // Save assistant message
-      if (assistantContent) {
+      // Save assistant message only if GPT decided to respond
+      if (assistantContent && !shouldNotRespond) {
         const { data: assistantMessage, error: assistantError } = await supabase
           .from('messages')
           .insert({
@@ -358,14 +372,22 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
       <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 md:pb-32">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
-            <Message
-              key={message.id}
-              user_name={message.user_name}
-              content={message.content}
-              role={message.role}
-              user_id={message.user_id}
-              current_user_id={user?.id}
-            />
+            <div key={message.id}>
+              <Message
+                user_name={message.user_name}
+                content={message.content}
+                role={message.role}
+                user_id={message.user_id}
+                current_user_id={user?.id}
+              />
+              {message.role === 'user' && noResponseMessageIds.has(message.id) && (
+                <div className="mb-6">
+                  <div className="text-xs text-gray-500 italic">
+                    GPT decided not to answer
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
           {streamingContent && (
             <Message
