@@ -71,14 +71,19 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
     scrollToBottom();
   }, [messages, streamingContent, typingUsers]);
 
-  // Set initial textarea height to 2 lines
-  useEffect(() => {
+  // Function to reset textarea to 2-line height
+  const resetTextareaHeight = () => {
     if (textareaRef.current) {
       const lineHeight = parseFloat(getComputedStyle(textareaRef.current).lineHeight) || 24;
       const padding = parseFloat(getComputedStyle(textareaRef.current).paddingTop) + parseFloat(getComputedStyle(textareaRef.current).paddingBottom);
       const twoLineHeight = (lineHeight * 2) + padding;
       textareaRef.current.style.height = `${twoLineHeight}px`;
     }
+  };
+
+  // Set initial textarea height to 2 lines
+  useEffect(() => {
+    resetTextareaHeight();
   }, []);
 
   const scrollToBottom = () => {
@@ -291,6 +296,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
 
     const userMessage = input.trim();
     setInput('');
+    resetTextareaHeight(); // Reset textarea to 2-line height after clearing input
     setIsLoading(true);
     setStreamingContent('');
 
@@ -493,7 +499,7 @@ export default function ChatInterface({ threadId }: ChatInterfaceProps) {
         </div>
       )}
       {/* Messages area - scrollable */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 md:pb-32">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 md:pb-48">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <div key={message.id}>
